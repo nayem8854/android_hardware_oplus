@@ -348,6 +348,10 @@ int LedVibratorDevice::write_value(const char* file, const char* value) {
 
     fd = TEMP_FAILURE_RETRY(open(file, O_WRONLY));
     if (fd < 0) {
+        if (strcmp(file, LED_DEVICE "/waveform_index") == 0) {
+            ALOGE("open %s failed, errno = %d, falling back to index", file, errno);
+            return write_value(LED_DEVICE "/index", value);
+        }
         ALOGE("open %s failed, errno = %d", file, errno);
         return -errno;
     }
