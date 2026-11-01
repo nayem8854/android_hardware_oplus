@@ -6,3 +6,4 @@ hal_client_domain(ifaa_app, vendor_hal_fingerprintpay)
 allow ifaa_app app_api_service:service_manager find;
 
 get_prop(ifaa_app, system_fingerprint_prop)
+get_prop(ifaa_app, vendor_fingerprint_prop)
