@@ -40,19 +40,33 @@ bool disableL1Aidl() {
 
     auto drmFactory =
             IDrmFactory::fromBinder(ndk::SpAIBinder(AServiceManager_getService(instance.c_str())));
-    CHECK(drmFactory);
+    if (!drmFactory) {
+        LOG(ERROR) << "Failed to get AIDL DRM factory: " << instance;
+        return false;
+    }
 
     Uuid uuid;
     uuid.uuid = std::to_array(WIDEVINE_UUID);
 
     std::shared_ptr<IDrmPlugin> drmPlugin;
-    CHECK(drmFactory->createDrmPlugin(uuid, APP_PACKAGE_NAME, &drmPlugin).isOk());
+    auto status = drmFactory->createDrmPlugin(uuid, APP_PACKAGE_NAME, &drmPlugin);
+    if (!status.isOk() || !drmPlugin) {
+        LOG(ERROR) << "Failed to create AIDL DRM plugin: " << status.getMessage();
+        return false;
+    }
 
     std::string provisioningModel;
-    CHECK(drmPlugin->getPropertyString("provisioningModel", &provisioningModel).isOk());
+    status = drmPlugin->getPropertyString("provisioningModel", &provisioningModel);
+    if (!status.isOk()) {
+        LOG(WARNING) << "Failed to get provisioningModel: " << status.getMessage();
+    }
 
     std::string systemId;
-    CHECK(drmPlugin->getPropertyString("systemId", &systemId).isOk());
+    status = drmPlugin->getPropertyString("systemId", &systemId);
+    if (!status.isOk()) {
+        LOG(WARNING) << "Failed to get systemId: " << status.getMessage();
+        return false;
+    }
 
     return provisioningModel != "BootCertificateChain" && systemId.size() > 5;
 }
@@ -67,19 +81,31 @@ bool disableL1Hidl() {
     std::string systemId;
 
     const auto callback = [&](Status status, const sp<IDrmPlugin>& drmPlugin) {
-        CHECK(status == Status::OK);
+        if (status != Status::OK || !drmPlugin) {
+            LOG(ERROR) << "DRM createPlugin failed with status: " << static_cast<int>(status);
+            return;
+        }
 
-        drmPlugin->getPropertyString("systemId", [&](Status status, const hidl_string& value) {
-            CHECK(status == Status::OK);
+        auto ret = drmPlugin->getPropertyString("systemId", [&](Status status, const hidl_string& value) {
+            if (status != Status::OK) {
+                LOG(WARNING) << "DRM getPropertyString failed with status: " << static_cast<int>(status);
+                return;
+            }
             systemId = value;
         });
+        if (!ret.isOk()) {
+            LOG(WARNING) << "DRM getPropertyString transaction failed: " << ret.description();
+        }
     };
 
     const auto drmFactory = IDrmFactory::getService("widevine");
 
     if (drmFactory) {
-        drmFactory->createPlugin(hidl_array<uint8_t, 16>(WIDEVINE_UUID), APP_PACKAGE_NAME,
+        auto ret = drmFactory->createPlugin(hidl_array<uint8_t, 16>(WIDEVINE_UUID), APP_PACKAGE_NAME,
                                  callback);
+        if (!ret.isOk()) {
+            LOG(ERROR) << "DRM createPlugin transaction failed: " << ret.description();
+        }
     }
 
     return systemId.size() > 5;
